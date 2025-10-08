@@ -101,3 +101,6 @@ def get_recent_files(db: Session = Depends(get_db)):
     ).limit(5).all()
     
     return recent_files
+@app.get("/health")
+def health_check():
+    return {"status": "ok"}
