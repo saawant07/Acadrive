@@ -1,3 +1,7 @@
+// --- For Local Development (when running on your computer) ---
+//const API_BASE_URL = "http://127.0.0.1:8000";
+
+// --- For Live Website (uncomment this before you push to GitHub) ---
 const API_BASE_URL = "https://acadrive.onrender.com";
 
 const uploadForm = document.getElementById("uploadForm");
