@@ -1,0 +1,221 @@
+/* File: frontend/style.css */
+
+/* Import a modern font from Google Fonts */
+@import url('https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600&display=swap');
+
+/* Define a clean color palette */
+:root {
+    --primary-color: #007bff;
+    --primary-hover: #0056b3;
+    --background-color: #f8f9fa;
+    --container-bg: #ffffff;
+    --text-color: #343a40;
+    --border-color: #dee2e6;
+    --success-color: #28a745;
+    --error-color: #dc3545;
+}
+
+body {
+    font-family: 'Poppins', sans-serif;
+    background-color: var(--background-color);
+    color: var(--text-color);
+    display: flex;
+    justify-content: center;
+    align-items: flex-start;
+    min-height: 100vh;
+    padding: 40px 20px;
+    margin: 0;
+}
+
+.container {
+    background: var(--container-bg);
+    width: 100%;
+    max-width: 800px;
+    padding: 40px;
+    border-radius: 12px;
+    box-shadow: 0 8px 30px rgba(0, 0, 0, 0.08);
+    transition: all 0.3s ease;
+}
+
+h1 {
+    font-size: 2.5rem;
+    font-weight: 600;
+    text-align: center;
+    margin-bottom: 20px;
+    color: var(--text-color);
+}
+
+h2 {
+    font-size: 1.5rem;
+    font-weight: 500;
+    margin-top: 40px;
+    margin-bottom: 20px;
+    padding-bottom: 10px;
+    border-bottom: 1px solid var(--border-color);
+}
+
+input[type="text"],
+input[type="file"] {
+    width: 100%;
+    padding: 12px;
+    margin-bottom: 20px;
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    box-sizing: border-box;
+    font-family: 'Poppins', sans-serif;
+    transition: border-color 0.3s, box-shadow 0.3s;
+}
+
+input[type="file"] {
+    padding: 8px;
+}
+
+input[type="text"]:focus {
+    outline: none;
+    border-color: var(--primary-color);
+    box-shadow: 0 0 0 3px rgba(0, 123, 255, 0.25);
+}
+
+button {
+    background-color: var(--primary-color);
+    color: white;
+    padding: 12px 20px;
+    border: none;
+    border-radius: 8px;
+    cursor: pointer;
+    font-size: 1rem;
+    font-weight: 500;
+    width: 100%;
+    transition: background-color 0.3s, transform 0.2s;
+}
+
+button:hover {
+    background-color: var(--primary-hover);
+    transform: translateY(-2px);
+}
+
+#uploadStatus {
+    margin-top: 15px;
+    font-style: italic;
+    font-weight: 500;
+    text-align: center;
+}
+
+.file-item {
+    background: #f8f9fa;
+    border: 1px solid var(--border-color);
+    padding: 15px 20px;
+    border-radius: 8px;
+    margin-bottom: 10px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    transition: transform 0.2s, box-shadow 0.2s;
+}
+
+.file-item:hover {
+    transform: translateY(-3px);
+    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.07);
+}
+
+.file-info p {
+    margin: 0;
+    padding: 2px 0;
+    color: #6c757d;
+    font-size: 0.9rem;
+}
+
+.file-info a {
+    text-decoration: none;
+    color: var(--primary-color);
+    font-weight: 500;
+    font-size: 1.1rem;
+}
+
+.delete-btn {
+    background-color: var(--error-color);
+    color: white;
+    font-size: 0.8rem;
+    padding: 8px 12px;
+    width: auto;
+}
+
+.delete-btn:hover {
+    background-color: #c82333;
+}
+/* Add these new styles for the progress bar */
+.progress-bar-container {
+    width: 100%;
+    background-color: #e9ecef;
+    border-radius: 8px;
+    margin-top: 15px;
+    overflow: hidden;
+    /* Start with the progress bar hidden */
+    display: none; 
+}
+
+.progress-bar {
+    width: 0%; /* Start at 0% width */
+    height: 20px;
+    background-color: var(--success-color);
+    color: white;
+    text-align: center;
+    line-height: 20px;
+    font-size: 0.8rem;
+    font-weight: 500;
+    transition: width 0.4s ease;
+}
+/* Add these new styles for the recent uploads section */
+#recent-files-container {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+    gap: 15px;
+    margin-top: 20px;
+}
+
+.recent-file-card {
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    padding: 10px;
+    text-align: center;
+    transition: transform 0.2s, box-shadow 0.2s;
+    background-color: #fff;
+}
+
+.recent-file-card:hover {
+    transform: translateY(-5px);
+    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
+}
+
+.recent-file-card a {
+    text-decoration: none;
+}
+
+.recent-file-card .preview {
+    height: 80px;
+    width: 100%;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    margin-bottom: 10px;
+    background-color: #e9ecef;
+    border-radius: 4px;
+    overflow: hidden;
+}
+
+.recent-file-card .preview img {
+    height: 100%;
+    width: 100%;
+    object-fit: cover;
+}
+
+.recent-file-card .preview .file-icon {
+    font-size: 40px;
+    color: #6c757d;
+}
+
+.recent-file-card .filename {
+    font-size: 0.8rem;
+    color: var(--text-color);
+    word-break: break-all;
+}

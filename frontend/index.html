@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Acadrive - Your Study Hub</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+    <div class="container">
+        <h1>Acadrive 📚</h1>
+        <section id="recent-uploads-section">
+    <h2>Recent Uploads</h2>
+    <div id="recent-files-container">
+        </div>
+</section>
+
+        <section id="upload-section">
+            <h2>Upload a New File</h2>
+            <form id="uploadForm">
+                <label for="subject">Subject / Course Code:</label>
+                <input type="text" id="subject" name="subject" required>
+                <label for="file">Select File:</label>
+                <input type="file" id="file" name="file" required>
+                <button type="submit">Upload</button>
+            </form>
+            <div id="uploadStatus"></div>
+            <div class="progress-bar-container" id="progressBarContainer">
+    <div class="progress-bar" id="progressBar">0%</div>
+</div>
+        </section>
+
+        <section id="search-section">
+            <h2>Search for Files</h2>
+            <form id="searchForm">
+                <input type="text" id="searchQuery" placeholder="Search by filename or subject..." required>
+                <button type="submit">Search</button>
+            </form>
+            <div id="results"></div>
+        </section>
+    </div>
+
+    <script src="script.js"></script>
+</body>
+</html>
