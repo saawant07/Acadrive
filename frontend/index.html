@@ -3,43 +3,241 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Acadrive - Your Study Hub</title>
+    <title>Acadrive - Your Academic File Sharing Hub</title>
+    <meta name="description" content="Upload, share, and manage your academic files with ease">
     <link rel="stylesheet" href="style.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
 </head>
 <body>
-
-    <div class="container">
-        <h1>Acadrive 📚</h1>
-        <section id="recent-uploads-section">
-    <h2>Recent Uploads</h2>
-    <div id="recent-files-container">
+    <!-- Navigation Header -->
+    <nav class="navbar">
+        <div class="nav-container">
+            <div class="nav-logo">
+                <i class="fas fa-cloud-upload-alt"></i>
+                <span>Acadrive</span>
+            </div>
+            <div class="nav-links">
+                <a href="#recent-uploads-section" class="nav-link">Recent</a>
+                <a href="#upload-section" class="nav-link">Upload</a>
+                <a href="#search-section" class="nav-link">Search</a>
+            </div>
         </div>
-</section>
+    </nav>
 
-        <section id="upload-section">
-            <h2>Upload a New File</h2>
-            <form id="uploadForm">
-                <label for="subject">Subject / Course Code:</label>
-                <input type="text" id="subject" name="subject" required>
-                <label for="file">Select File:</label>
-                <input type="file" id="file" name="file" required>
-                <button type="submit">Upload</button>
-            </form>
-            <div id="uploadStatus"></div>
-            <div class="progress-bar-container" id="progressBarContainer">
-    <div class="progress-bar" id="progressBar">0%</div>
-</div>
+    <!-- Hero Section -->
+    <section class="hero dark-professional">
+        <div class="hero-content">
+            <h1 class="hero-title">Your Academic File Hub</h1>
+            <p class="hero-subtitle">Upload, share, and manage your study materials with ease</p>
+            <div class="hero-stats">
+                <div class="stat">
+                    <span class="stat-number" id="total-files">0</span>
+                    <span class="stat-label">Files Shared</span>
+                </div>
+                <div class="stat">
+                    <span class="stat-number" id="total-subjects">0</span>
+                    <span class="stat-label">Subjects</span>
+                </div>
+                <div class="stat">
+                    <span class="stat-number" id="active-users">0</span>
+                    <span class="stat-label">Active Users</span>
+                </div>
+            </div>
+        </div>
+        <div class="hero-background-elements">
+            <div class="floating-element el-1"><i class="fas fa-file-pdf"></i></div>
+            <div class="floating-element el-2"><i class="fas fa-book"></i></div>
+            <div class="floating-element el-3"><i class="fas fa-graduation-cap"></i></div>
+            <div class="floating-element el-4"><i class="fas fa-cloud"></i></div>
+        </div>
+    </section>
+
+    <div class="main-container">
+        <!-- Recent Uploads Section -->
+        <section id="recent-uploads-section" class="section-card">
+            <div class="section-header">
+                <h2><i class="fas fa-clock"></i> Recent Uploads</h2>
+                <button class="refresh-btn" id="refresh-recent">
+                    <i class="fas fa-sync-alt"></i> Refresh
+                </button>
+            </div>
+            <div id="recent-files-container" class="files-grid">
+                <div class="loading-placeholder">
+                    <i class="fas fa-spinner fa-spin"></i>
+                    <p>Loading recent files...</p>
+                </div>
+            </div>
         </section>
 
-        <section id="search-section">
-            <h2>Search for Files</h2>
-            <form id="searchForm">
-                <input type="text" id="searchQuery" placeholder="Search by filename or subject..." required>
-                <button type="submit">Search</button>
+        <!-- Upload Section -->
+        <section id="upload-section" class="section-card">
+            <div class="section-header">
+                <h2><i class="fas fa-cloud-upload-alt"></i> Upload New File</h2>
+            </div>
+            <form id="uploadForm" class="upload-form">
+                <div class="form-group">
+                    <label for="subject" class="form-label">
+                        <i class="fas fa-book"></i> Subject / Course Code
+                    </label>
+                    <input type="text" id="subject" name="subject" required 
+                           placeholder="e.g., CS101, Mathematics, Physics">
+                </div>
+                
+                <div class="form-group">
+                    <label for="file" class="form-label">
+                        <i class="fas fa-file"></i> Select File
+                    </label>
+                    <div class="file-input-container">
+                        <input type="file" id="file" name="file" required 
+                               class="file-input" accept=".pdf,.jpg,.jpeg,.png,.doc,.docx,.ppt,.pptx,.txt">
+                        <label for="file" class="file-input-label">
+                            <i class="fas fa-cloud-upload-alt"></i>
+                            <span>Choose a file or drag & drop here</span>
+                            <small>Supports PDF, Images, Word, PowerPoint (Max 50MB)</small>
+                        </label>
+                        <span class="file-name" id="fileName">No file chosen</span>
+                    </div>
+                </div>
+
+                <button type="submit" class="submit-btn">
+                    <i class="fas fa-upload"></i> Upload File
+                </button>
             </form>
-            <div id="results"></div>
+            
+            <div class="progress-section">
+                <div class="progress-bar-container" id="progressBarContainer">
+                    <div class="progress-info">
+                        <span class="progress-text">Uploading...</span>
+                        <span class="progress-percent" id="progressPercent">0%</span>
+                    </div>
+                    <div class="progress-track">
+                        <div class="progress-bar" id="progressBar"></div>
+                    </div>
+                </div>
+                <div id="uploadStatus" class="status-message"></div>
+            </div>
+        </section>
+
+        <!-- Search Section -->
+        <section id="search-section" class="section-card">
+            <div class="section-header">
+                <h2><i class="fas fa-search"></i> Search Files</h2>
+                <div class="search-filters">
+                    <select id="filterSubject" class="filter-select">
+                        <option value="">All Subjects</option>
+                        <option value="Computer Science">Computer Science</option>
+                        <option value="Mathematics">Mathematics</option>
+                        <option value="Physics">Physics</option>
+                        <option value="Engineering">Engineering</option>
+                    </select>
+                    <select id="filterType" class="filter-select">
+                        <option value="">All Types</option>
+                        <option value="pdf">PDF</option>
+                        <option value="image">Images</option>
+                        <option value="document">Documents</option>
+                    </select>
+                </div>
+            </div>
+            <div class="search-container">
+                <div class="search-input-wrapper">
+                    <i class="fas fa-search search-icon"></i>
+                    <input type="text" id="searchQuery" 
+                           placeholder="Search by filename, subject, or course code...">
+                    <i class="fas fa-times clear-search" id="clearSearch"></i>
+                </div>
+            </div>
+            <div id="results" class="search-results">
+                <div class="empty-state">
+                    <i class="fas fa-search"></i>
+                    <p>Enter a search term to find files</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- Features Section -->
+        <section class="features-section">
+            <div class="section-card">
+                <h2 class="features-title">Why Choose Acadrive?</h2>
+                <div class="features-grid">
+                    <div class="feature-card">
+                        <div class="feature-icon">
+                            <i class="fas fa-shield-alt"></i>
+                        </div>
+                        <h3>Secure Storage</h3>
+                        <p>Your academic files are stored securely with enterprise-grade encryption and regular backups.</p>
+                    </div>
+                    <div class="feature-card">
+                        <div class="feature-icon">
+                            <i class="fas fa-bolt"></i>
+                        </div>
+                        <h3>Fast Uploads</h3>
+                        <p>Upload large files quickly with our optimized infrastructure and progress tracking.</p>
+                    </div>
+                    <div class="feature-card">
+                        <div class="feature-icon">
+                            <i class="fas fa-search"></i>
+                        </div>
+                        <h3>Smart Search</h3>
+                        <p>Find exactly what you need with our advanced search and filtering capabilities.</p>
+                    </div>
+                    <div class="feature-card">
+                        <div class="feature-icon">
+                            <i class="fas fa-mobile-alt"></i>
+                        </div>
+                        <h3>Mobile Friendly</h3>
+                        <p>Access your files from any device with our fully responsive design.</p>
+                    </div>
+                </div>
+            </div>
         </section>
     </div>
+
+    <!-- Footer -->
+    <footer class="footer">
+        <div class="footer-content">
+            <div class="footer-main">
+                <div class="footer-logo">
+                    <i class="fas fa-cloud-upload-alt"></i>
+                    <span>Acadrive</span>
+                </div>
+                <p class="footer-text">Your reliable academic file sharing platform for students and educators.</p>
+                <div class="footer-social">
+                    <a href="#" class="social-link"><i class="fab fa-twitter"></i></a>
+                    <a href="#" class="social-link"><i class="fab fa-linkedin"></i></a>
+                    <a href="#" class="social-link"><i class="fab fa-github"></i></a>
+                </div>
+            </div>
+            <div class="footer-links">
+                <div class="footer-column">
+                    <h4>Platform</h4>
+                    <a href="#" class="footer-link">Features</a>
+                    <a href="#" class="footer-link">Pricing</a>
+                    <a href="#" class="footer-link">API</a>
+                </div>
+                <div class="footer-column">
+                    <h4>Support</h4>
+                    <a href="#" class="footer-link">Help Center</a>
+                    <a href="#" class="footer-link">Contact Us</a>
+                    <a href="#" class="footer-link">Status</a>
+                </div>
+                <div class="footer-column">
+                    <h4>Legal</h4>
+                    <a href="#" class="footer-link">Privacy Policy</a>
+                    <a href="#" class="footer-link">Terms of Service</a>
+                    <a href="#" class="footer-link">Cookie Policy</a>
+                </div>
+            </div>
+        </div>
+        <div class="footer-bottom">
+            <p>&copy; 2024 Acadrive. All rights reserved. Built for the academic community.</p>
+        </div>
+    </footer>
+
+    <!-- Toast Notification -->
+    <div id="toast" class="toast"></div>
 
     <script src="script.js"></script>
 </body>

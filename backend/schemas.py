@@ -1,15 +1,20 @@
 from pydantic import BaseModel
 from datetime import datetime
+from typing import Optional
 
 class FileBase(BaseModel):
     filename: str
-    subject: str
+    subject: str  # Course name
+
+class FileCreate(FileBase):
+    pass
 
 class File(FileBase):
     id: int
     file_url: str
     file_size: int
-    preview_url: str | None = None
+    preview_url: Optional[str] = None
     created_at: datetime
+    
     class Config:
-        orm_mode = True
+        from_attributes = True  # Updated from orm_mode

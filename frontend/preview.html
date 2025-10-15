@@ -3,11 +3,14 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>PDF Preview</title>
+    <title>PDF Preview - Acadrive</title>
+    <!-- Use the same CDN as your main page -->
     <script src="https://mozilla.github.io/pdf.js/build/pdf.mjs" type="module"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <style>
+        /* Keep your existing CSS styles */
         body { font-family: sans-serif; margin: 0; background-color: #525659; display: flex; flex-direction: column; height: 100vh; }
-        #top-bar { background-color: #333; color: white; padding: 10px 20px; display: flex; justify-content: space-between; align-items: center; box-shadow: 0 2px 5px rgba(0,0,0,0.5); }
+        #top-bar { background-color: #333; color: white; padding: 10px 20px; display: flex; justify-content: space-between; align-items: center; box-shadow: 0 2px 5px rgba(0,0,0,0.5); z-index: 10; }
         #top-bar span { font-size: 1.2rem; }
         #top-bar .controls button, #download-btn { background-color: #007bff; color: white; border: none; padding: 8px 15px; border-radius: 4px; cursor: pointer; margin-left: 10px; }
         #pdf-container { flex-grow: 1; text-align: center; overflow: auto; padding: 20px; }
@@ -15,7 +18,7 @@
     </style>
 </head>
 <body>
-
+    <!-- Keep your existing HTML structure -->
     <div id="top-bar">
         <span id="filename">Loading...</span>
         <div class="controls">
@@ -31,12 +34,14 @@
     </div>
 
     <script type="module">
+        // Your existing preview JavaScript code
         const { pdfjsLib } = globalThis;
         pdfjsLib.GlobalWorkerOptions.workerSrc = `https://mozilla.github.io/pdf.js/build/pdf.worker.mjs`;
 
+        // Get the PDF file URL from the page's address
         const urlParams = new URLSearchParams(window.location.search);
         const pdfUrl = urlParams.get('file');
-        const pdfName = pdfUrl.split('/').pop();
+        const pdfName = pdfUrl ? pdfUrl.split('/').pop() : 'Document';
 
         document.getElementById('filename').textContent = pdfName;
         const downloadBtn = document.getElementById('download-btn');
@@ -50,6 +55,7 @@
               canvas = document.getElementById('pdf-canvas'),
               ctx = canvas.getContext('2d');
 
+        // Rest of your existing preview JavaScript...
         const renderPage = num => {
             pageIsRendering = true;
             pdfDoc.getPage(num).then(page => {
@@ -103,13 +109,16 @@
                 });
         });
 
-        pdfjsLib.getDocument(pdfUrl).promise.then(doc => {
-            pdfDoc = doc;
-            document.getElementById('page-count').textContent = pdfDoc.numPages;
-            renderPage(pageNum);
-        }).catch(err => {
-            alert(`Error loading PDF: ${err.message}`);
-        });
+        if (pdfUrl) {
+            pdfjsLib.getDocument(pdfUrl).promise.then(doc => {
+                pdfDoc = doc;
+                document.getElementById('page-count').textContent = pdfDoc.numPages;
+                renderPage(pageNum);
+            }).catch(err => {
+                console.error(`Error loading PDF: ${err.message}`);
+                alert(`Error loading PDF. Please check the browser console for more details.`);
+            });
+        }
 
         document.getElementById('prev-page').addEventListener('click', showPrevPage);
         document.getElementById('next-page').addEventListener('click', showNextPage);

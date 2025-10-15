@@ -1,106 +1,168 @@
 import os
-import cloudinary
-import cloudinary.uploader
-from dotenv import load_dotenv
-from fastapi import FastAPI, Depends, UploadFile, File, Form, HTTPException
+import aiofiles
+from fastapi import FastAPI, UploadFile, File, Form, HTTPException, Depends
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
+from pathlib import Path
+from database import get_db, FileRecord
 
-# STEP 1: Load the environment variables from .env FIRST.
-load_dotenv(dotenv_path="backend/.env")
+# --- SETUP ---
+# Get the directory where this main.py file is located
+BACKEND_DIR = Path(__file__).resolve().parent
+UPLOADS_DIR = BACKEND_DIR / "uploads"
+UPLOADS_DIR.mkdir(exist_ok=True)
 
-# STEP 2: Now, import the other project files that NEED the variables.
-from . import models, schemas
-from .database import engine, get_db
+app = FastAPI(title="Acadrive API", version="1.0.0")
 
-models.Base.metadata.create_all(bind=engine)
-
-app = FastAPI()
-
+# --- CORS MIDDLEWARE ---
+# Allow all origins for now - you can restrict later
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=["*"],  # Change this to your Vercel domain later
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-cloudinary.config(
-    cloud_name = os.getenv("CLOUDINARY_CLOUD_NAME"),
-    api_key = os.getenv("CLOUDINARY_API_KEY"),
-    api_secret = os.getenv("CLOUDINARY_API_SECRET"),
-    secure=True
-)
+# --- DATABASE DEPENDENCY ---
+def get_database():
+    db = next(get_db())
+    try:
+        yield db
+    finally:
+        db.close()
 
-@app.post("/upload/", response_model=schemas.File)
-def upload_file(
+# --- API ENDPOINTS ---
+
+@app.post("/upload/")
+async def upload_file(
     subject: str = Form(...),
     file: UploadFile = File(...),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_database)
 ):
     try:
-        file.file.seek(0, 2)
-        file_size = file.file.tell()
-        file.file.seek(0)
-
-        # For this final version, we will always upload PDFs as "image" resource type
-        # to allow us to generate a preview.
-        upload_result = cloudinary.uploader.upload(
-            file.file, 
-            resource_type="image", 
-            folder="acadrive_files"
-        )
+        # Validate file size (50MB limit)
+        max_size = 50 * 1024 * 1024  # 50MB in bytes
+        file_content = await file.read()
         
-        secure_url = upload_result.get("secure_url")
-        if not secure_url:
-            raise HTTPException(status_code=500, detail="Could not upload file.")
+        if len(file_content) > max_size:
+            raise HTTPException(status_code=400, detail="File too large. Maximum size is 50MB.")
         
-        # By default, the URLs are the one Cloudinary gives us (for images)
-        viewable_url = secure_url
-        preview_url = secure_url
-
-        # --- FINAL LOGIC FOR PDFs ---
-        # If the file is a PDF, we generate two special URLs
-        if "pdf" in file.content_type:
-            # 1. For the preview, we create a JPG of the first page.
-            preview_url = secure_url.replace("/upload/", "/upload/pg_1/f_jpg/")
-            # 2. For the main link, we change "image" to "raw" to make it viewable.
-            viewable_url = secure_url.replace("/image/upload/", "/raw/upload/")
-        # --- END OF LOGIC ---
-
-        db_file = models.FileRecord(
-            filename=file.filename, 
-            subject=subject, 
-            file_url=viewable_url,     # Store the corrected, viewable URL
+        # Define the path where the file will be saved
+        file_path = UPLOADS_DIR / file.filename
+        
+        # Check if file already exists and create unique name
+        counter = 1
+        original_name = file.filename
+        name_parts = original_name.rsplit('.', 1)
+        
+        while file_path.exists():
+            if len(name_parts) == 2:
+                new_filename = f"{name_parts[0]}_{counter}.{name_parts[1]}"
+            else:
+                new_filename = f"{original_name}_{counter}"
+            file_path = UPLOADS_DIR / new_filename
+            counter += 1
+        
+        # Save the file
+        async with aiofiles.open(file_path, 'wb') as out_file:
+            await out_file.write(file_content)
+        
+        file_size = len(file_content)
+        file_type = file.content_type.split('/')[0] if file.content_type else 'application'
+        
+        # Use the final filename (which might be modified for uniqueness)
+        final_filename = file_path.name
+        
+        # Create a database record
+        db_file = FileRecord(
+            filename=final_filename,
+            subject=subject,
+            file_path=str(file_path),
+            file_url=f"/uploads/{final_filename}",
             file_size=file_size,
-            preview_url=preview_url   # Store the generated preview URL
+            file_type=file_type
         )
         db.add(db_file)
         db.commit()
         db.refresh(db_file)
-        return db_file
+        
+        return {
+            "id": db_file.id,
+            "filename": db_file.filename,
+            "subject": db_file.subject,
+            "file_url": f"https://{os.environ.get('RAILWAY_STATIC_URL', '')}/uploads/{final_filename}",
+            "file_size": db_file.file_size,
+            "file_type": db_file.file_type,
+            "created_at": db_file.created_at
+        }
+        
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
-@app.get("/search/", response_model=list[schemas.File])
-def search_files(query: str, db: Session = Depends(get_db)):
-    search_query = f"%{query}%"
-    files = db.query(models.FileRecord).filter(
-        (models.FileRecord.filename.ilike(search_query)) |
-        (models.FileRecord.subject.ilike(search_query))
-    ).all()
-    return files
-# Add this new function to your main.py file
 
-@app.get("/files/recent", response_model=list[schemas.File])
-def get_recent_files(db: Session = Depends(get_db)):
-    # Query the database for files
-    # Order them by creation date in descending order (newest first)
-    # Limit the result to the top 5
-    recent_files = db.query(models.FileRecord).order_by(
-        models.FileRecord.created_at.desc()
-    ).limit(5).all()
+@app.get("/files/recent")
+def get_recent_files(db: Session = Depends(get_database)):
+    files = db.query(FileRecord).order_by(FileRecord.created_at.desc()).limit(5).all()
     
-    return recent_files
+    # Build full URLs for files
+    base_url = f"https://{os.environ.get('RAILWAY_STATIC_URL', '')}"
+    for file in files:
+        file.file_url = f"{base_url}{file.file_url}"
+    
+    return files
+
+@app.get("/search/")
+def search_files(query: str, subject: str = None, file_type: str = None, db: Session = Depends(get_database)):
+    search_query = db.query(FileRecord)
+    
+    # Filter by the main search text
+    search_filter = f"%{query}%"
+    search_query = search_query.filter(
+        (FileRecord.filename.ilike(search_filter)) |
+        (FileRecord.subject.ilike(search_filter))
+    )
+    
+    # Add filters from the dropdowns if they exist
+    if subject:
+        search_query = search_query.filter(FileRecord.subject == subject)
+    
+    if file_type:
+        search_query = search_query.filter(FileRecord.file_type == file_type)
+    
+    files = search_query.order_by(FileRecord.created_at.desc()).all()
+    
+    # Build full URLs for files
+    base_url = f"https://{os.environ.get('RAILWAY_STATIC_URL', '')}"
+    for file in files:
+        file.file_url = f"{base_url}{file.file_url}"
+        
+    return files
+
+@app.get("/stats")
+def get_stats(db: Session = Depends(get_database)):
+    total_files = db.query(FileRecord).count()
+    total_subjects = db.query(FileRecord.subject).distinct().count()
+    return {
+        "total_files": total_files,
+        "total_subjects": total_subjects,
+        "active_users": 1  # Placeholder for now
+    }
+
+# --- SERVING UPLOADED FILES ---
+@app.get("/uploads/{filename}")
+async def get_uploaded_file(filename: str):
+    file_path = UPLOADS_DIR / filename
+    if file_path.is_file():
+        return FileResponse(file_path)
+    raise HTTPException(status_code=404, detail="File not found")
+
+# Health check endpoint
+@app.get("/")
+async def root():
+    return {"message": "Acadrive API is running", "status": "healthy"}
+
 @app.get("/health")
-def health_check():
-    return {"status": "ok"}
+async def health_check():
+    return {"status": "healthy", "service": "acadrive-api"}
