@@ -4,23 +4,26 @@ from sqlalchemy.orm import sessionmaker
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.sql import func
 
-# Use environment variable for database URL with fallback
+# Database configuration
 DATABASE_URL = os.environ.get('DATABASE_URL', 'sqlite:///./acadrive.db')
 
-# For PostgreSQL on Railway, we need to replace postgres:// with postgresql://
+# Handle Railway PostgreSQL URL
 if DATABASE_URL and DATABASE_URL.startswith('postgres://'):
     DATABASE_URL = DATABASE_URL.replace('postgres://', 'postgresql://', 1)
 
-# Create database engine
-engine = create_engine(DATABASE_URL)
+print(f"Database URL: {DATABASE_URL[:50]}...")  # Log first 50 chars
 
-# Create session factory
+# Create engine with better settings for production
+engine = create_engine(
+    DATABASE_URL,
+    pool_pre_ping=True,
+    pool_recycle=300,
+    connect_args={"check_same_thread": False} if DATABASE_URL.startswith('sqlite') else {}
+)
+
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
-
-# Base class for database models
 Base = declarative_base()
 
-# FileRecord model (same as before)
 class FileRecord(Base):
     __tablename__ = "files"
     
@@ -34,9 +37,12 @@ class FileRecord(Base):
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
 # Create tables
-Base.metadata.create_all(bind=engine)
+try:
+    Base.metadata.create_all(bind=engine)
+    print("Database tables created successfully")
+except Exception as e:
+    print(f"Error creating tables: {e}")
 
-# Database dependency
 def get_db():
     db = SessionLocal()
     try:
