@@ -22,7 +22,7 @@ app = FastAPI(title="Acadrive API", version="1.0.0")
 # --- CORS MIDDLEWARE ---
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=["*"],  # Allow all origins in production
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -104,8 +104,8 @@ async def upload_file(
             file_type = 'presentation'
         
         # Get base URL for file links
-        railway_url = os.environ.get('RAILWAY_PUBLIC_DOMAIN', '')
-        base_url = f"https://{railway_url}" if railway_url else ""
+        render_url = os.environ.get('RENDER_EXTERNAL_URL', '')
+        base_url = render_url if render_url else ""
         
         # Create database record
         db_file = FileRecord(

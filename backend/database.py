@@ -4,22 +4,17 @@ from sqlalchemy.orm import sessionmaker
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.sql import func
 
-# Database configuration
+# Database configuration - Render provides DATABASE_URL automatically
 DATABASE_URL = os.environ.get('DATABASE_URL', 'sqlite:///./acadrive.db')
 
-# Handle Railway PostgreSQL URL
+# Handle PostgreSQL URL format
 if DATABASE_URL and DATABASE_URL.startswith('postgres://'):
     DATABASE_URL = DATABASE_URL.replace('postgres://', 'postgresql://', 1)
 
-print(f"Database URL: {DATABASE_URL[:50]}...")  # Log first 50 chars
+print(f"Using database: {DATABASE_URL}")
 
-# Create engine with better settings for production
-engine = create_engine(
-    DATABASE_URL,
-    pool_pre_ping=True,
-    pool_recycle=300,
-    connect_args={"check_same_thread": False} if DATABASE_URL.startswith('sqlite') else {}
-)
+# Create engine
+engine = create_engine(DATABASE_URL)
 
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
