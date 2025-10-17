@@ -1,7 +1,7 @@
 // Configuration - Dynamic API URL based on environment
 const API_BASE_URL = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1' 
     ? "http://localhost:8000" 
-    : "https://acadrive-backend-production.up.railway.app";
+    : "https://your-backend-url.onrender.com"; // UPDATE THIS AFTER DEPLOYMENT
 
 console.log('API Base URL:', API_BASE_URL);
 

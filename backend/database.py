@@ -4,18 +4,13 @@ from sqlalchemy.orm import sessionmaker
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.sql import func
 
-# Database configuration - Render provides DATABASE_URL automatically
+# Database setup
 DATABASE_URL = os.environ.get('DATABASE_URL', 'sqlite:///./acadrive.db')
 
-# Handle PostgreSQL URL format
-if DATABASE_URL and DATABASE_URL.startswith('postgres://'):
+if DATABASE_URL.startswith('postgres://'):
     DATABASE_URL = DATABASE_URL.replace('postgres://', 'postgresql://', 1)
 
-print(f"Using database: {DATABASE_URL}")
-
-# Create engine
 engine = create_engine(DATABASE_URL)
-
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
 
@@ -32,11 +27,7 @@ class FileRecord(Base):
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
 # Create tables
-try:
-    Base.metadata.create_all(bind=engine)
-    print("Database tables created successfully")
-except Exception as e:
-    print(f"Error creating tables: {e}")
+Base.metadata.create_all(bind=engine)
 
 def get_db():
     db = SessionLocal()

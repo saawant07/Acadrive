@@ -540,8 +540,6 @@ input[type="text"]:focus {
 }
 
 /* ===== FILES GRID ===== */
-
-/* ===== MINIMAL RECENT FILES SECTION ===== */
 .files-grid {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
@@ -674,6 +672,7 @@ input[type="text"]:focus {
     font-size: 0.9rem;
     opacity: 0.7;
 }
+
 /* ===== SEARCH SECTION ===== */
 .search-filters {
     display: flex;
@@ -1283,12 +1282,4 @@ a:focus-visible {
         --text-secondary: #cccccc;
         --border: #666666;
     }
-}
-/* Add this to your existing CSS to hide images in recent files */
-.recent-file-card .preview img {
-    display: none !important;
-}
-
-.recent-file-card .preview {
-    background: var(--surface) !important;
 }
