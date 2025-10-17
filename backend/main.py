@@ -3,9 +3,9 @@ import aiofiles
 from fastapi import FastAPI, UploadFile, File, Form, HTTPException, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
-from sqlalchemy.orm import Session
+from sqlmodel import Session
 from pathlib import Path
-from database import get_db, FileRecord
+from database import get_session, FileRecord
 
 # Setup
 BACKEND_DIR = Path(__file__).resolve().parent
@@ -24,7 +24,7 @@ app.add_middleware(
 )
 
 def get_database():
-    db = next(get_db())
+    db = next(get_session())
     try:
         yield db
     finally:
