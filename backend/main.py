@@ -1,20 +1,26 @@
 import os
-import aiofiles
 import aiosqlite
 import sqlite3
-from fastapi import FastAPI, UploadFile, File, Form, HTTPException
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, JSONResponse
 from pathlib import Path
 from datetime import datetime
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 import re
+import cloudinary
+from pydantic import BaseModel
 
 # Setup
 BASE_DIR = Path(__file__).resolve().parent
-UPLOADS_DIR = BASE_DIR / "uploads"
-UPLOADS_DIR.mkdir(exist_ok=True)
 DB_PATH = BASE_DIR / "acadrive.db"
+
+# Cloudinary Configuration - expecting environment variables
+cloudinary.config(
+    cloud_name=os.environ.get("CLOUDINARY_CLOUD_NAME"),
+    api_key=os.environ.get("CLOUDINARY_API_KEY"),
+    api_secret=os.environ.get("CLOUDINARY_API_SECRET"),
+    secure=True
+)
 
 # FastAPI App Initialization
 app = FastAPI(title="Acadrive API")
@@ -28,6 +34,14 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Pydantic Models for request body validation
+class FileUploadData(BaseModel):
+    subject: str
+    file_url: str
+    filename: str
+    file_size: int
+    file_type: str
+
 def init_db():
     """Initializes the SQLite database and creates the files table if it doesn't exist."""
     conn = sqlite3.connect(DB_PATH)
@@ -37,7 +51,7 @@ def init_db():
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             filename TEXT NOT NULL,
             subject TEXT NOT NULL,
-            file_path TEXT NOT NULL,
+            file_path TEXT,
             file_url TEXT NOT NULL,
             file_size INTEGER NOT NULL,
             file_type TEXT NOT NULL,
@@ -62,55 +76,33 @@ def secure_filename(filename: str) -> str:
     # Keep only-safe characters
     return re.sub(r'[^a-zA-Z0-9_.-]', '_', filename)
 
-@app.post("/upload/")
-async def upload_file(subject: str = Form(...), file: UploadFile = File(...)):
-    """Handles file uploads, sanitizes filename, saves file, and records it in the database."""
+@app.get("/config")
+async def get_config():
+    """Provides the Cloudinary cloud name to the frontend."""
+    cloud_name = os.environ.get("CLOUDINARY_CLOUD_NAME")
+    if not cloud_name:
+        raise HTTPException(status_code=500, detail="Cloudinary configuration is missing on the server.")
+    return {"cloud_name": cloud_name}
+
+@app.post("/upload/", status_code=201)
+async def save_file_record(data: FileUploadData):
+    """Saves the metadata of a file already uploaded to Cloudinary."""
     try:
-        # Security: Limit file size (e.g., 50MB)
-        contents = await file.read()
-        file_size = len(contents)
-        if file_size > 50 * 1024 * 1024:
-            raise HTTPException(status_code=400, detail="File too large")
-        
-        # Create safe filename
-        safe_filename = secure_filename(file.filename)
-        file_path = UPLOADS_DIR / safe_filename
-        
-        # Handle potential filename collisions
-        counter = 1
-        final_filename = safe_filename
-        while file_path.exists():
-            name, ext = os.path.splitext(safe_filename)
-            final_filename = f"{name}_{counter}{ext}"
-            file_path = UPLOADS_DIR / final_filename
-            counter += 1
-
-        async with aiofiles.open(file_path, 'wb') as out_file:
-            await out_file.write(contents)
-
-        # Determine file type
-        file_type = 'document'
-        if final_filename.lower().endswith('.pdf'):
-            file_type = 'pdf'
-        elif final_filename.lower().endswith(('.jpg', '.jpeg', '.png')):
-            file_type = 'image'
-        
-        # Create database record
         async with aiosqlite.connect(DB_PATH) as db:
             cursor = await db.execute(
                 '''INSERT INTO files (filename, subject, file_path, file_url, file_size, file_type) VALUES (?, ?, ?, ?, ?, ?)''',
-                (final_filename, subject, str(file_path), f"/uploads/{final_filename}", file_size, file_type)
+                (data.filename, data.subject, "cloudinary", data.file_url, data.file_size, data.file_type)
             )
             await db.commit()
             file_id = cursor.lastrowid
         
         return {
             "id": file_id,
-            "filename": final_filename,
-            "subject": subject,
-            "file_url": f"/uploads/{final_filename}",
-            "file_size": file_size,
-            "file_type": file_type
+            "filename": data.filename,
+            "subject": data.subject,
+            "file_url": data.file_url,
+            "file_size": data.file_size,
+            "file_type": data.file_type
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"An error occurred: {e}")
@@ -139,7 +131,7 @@ async def get_recent_files():
     return result
 
 @app.get("/search/")
-async def search_files(query: str, subject: str = None, file_type: str = None):
+async def search_files(query: str, subject: Optional[str] = None, file_type: Optional[str] = None):
     async with aiosqlite.connect(DB_PATH) as db:
         db.row_factory = aiosqlite.Row
         
@@ -153,7 +145,7 @@ async def search_files(query: str, subject: str = None, file_type: str = None):
             sql += " AND subject = :subject"
             params['subject'] = subject
         
-        if file_type:
+        if file_type and file_type != "All Types":
             sql += " AND file_type = :file_type"
             params['file_type'] = file_type
         
@@ -190,10 +182,10 @@ async def get_stats():
         "active_users": 1 # Placeholder for active users
     }
 
-@app.get("/uploads/{filename}")
-async def get_upload(filename: str):
-    """Serves an uploaded file."""
-    file_path = UPLOADS_DIR / filename
-    if not file_path.is_file():
-        raise HTTPException(status_code=404, detail="File not found")
-    return FileResponse(file_path)
+@app.get("/subjects")
+async def get_subjects():
+    """Returns a list of unique subjects from the database."""
+    async with aiosqlite.connect(DB_PATH) as db:
+        cursor = await db.execute("SELECT DISTINCT subject FROM files ORDER BY subject ASC")
+        subjects = await cursor.fetchall()
+    return [subject[0] for subject in subjects]

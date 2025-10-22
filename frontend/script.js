@@ -1,7 +1,7 @@
 // Configuration - Dynamic API URL based on environment
 const API_BASE_URL = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1' 
     ? "http://localhost:8000" 
-    : "https://acadrive-backend.onrender.com"; // PASTE YOUR RENDER URL HERE
+    : "https://acadrive-backend.onrender.com";
 
 console.log('API Base URL:', API_BASE_URL);
 
@@ -17,7 +17,8 @@ let appState = {
     filters: {
         subject: '',
         type: ''
-    }
+    },
+    config: {}
 };
 
 // DOM Elements
@@ -52,8 +53,10 @@ document.addEventListener('DOMContentLoaded', () => {
 async function initializeApp() {
     setupEventListeners();
     await Promise.all([
+        fetchConfig(),
         fetchRecentFiles(),
-        fetchStats()
+        fetchStats(),
+        fetchSubjects()
     ]);
     showToast('Welcome to Acadrive! Your academic file hub is ready.', 'success');
 }
@@ -167,19 +170,49 @@ async function uploadFileWithProgress(formData) {
     showProgressBar();
     showStatus('Uploading file...', 'info');
     disableForm(true);
+    const simulationInterval = simulateProgressBar();
+
+    const file = formData.get('file');
+    const subject = formData.get('subject');
 
     try {
-        const response = await fetch(`${API_BASE_URL}/upload/`, {
+        // Direct upload to Cloudinary
+        const cloudinaryFormData = new FormData();
+        cloudinaryFormData.append('file', file);
+        cloudinaryFormData.append('upload_preset', 'acadrive_preset'); // IMPORTANT: Create this in your Cloudinary settings
+        cloudinaryFormData.append('folder', 'acadrive_uploads');
+
+        const cloudinaryUrl = `https://api.cloudinary.com/v1_1/${appState.config.cloud_name}/auto/upload`;
+
+        const cloudinaryResponse = await fetch(cloudinaryUrl, {
             method: 'POST',
-            body: formData
+            body: cloudinaryFormData
         });
 
-        if (!response.ok) {
-            const errorData = await response.json();
-            throw new Error(errorData.detail || 'Upload failed');
+        if (!cloudinaryResponse.ok) {
+            const error = await cloudinaryResponse.json();
+            throw new Error(`Cloudinary Error: ${error.error.message}`);
         }
+        const cloudinaryData = await cloudinaryResponse.json();
 
-        const result = await response.json();
+        // Now, send the file info to our backend
+        const backendResponse = await fetch(`${API_BASE_URL}/upload/`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' }, // Correct header
+            body: JSON.stringify({
+                subject: subject,
+                file_url: cloudinaryData.secure_url, // URL from Cloudinary
+                filename: file.name,
+                file_size: file.size,
+                file_type: getBackendFileType(file.name) // Use mapped type for backend
+            })
+        });
+        
+        if (!backendResponse.ok) throw new Error('Backend processing failed.');
+        
+        clearInterval(simulationInterval);
+        updateProgressBar(100);
+
         showStatus('File uploaded successfully!', 'success');
         elements.uploadForm.reset();
         handleFileInputChange({ target: elements.fileInput });
@@ -188,12 +221,14 @@ async function uploadFileWithProgress(formData) {
         // Refresh data
         await Promise.all([fetchRecentFiles(), fetchStats()]);
         
+        await fetchSubjects(); // Refresh subjects list in case a new one was added
+
     } catch (error) {
         console.error('Upload error:', error);
         showStatus(`Upload failed: ${error.message}`, 'error');
         showToast('Upload failed. Please try again.', 'error');
     } finally {
-        setTimeout(hideProgressBar, 1000);
+        setTimeout(hideProgressBar, 2000);
         disableForm(false);
     }
 }
@@ -231,6 +266,21 @@ function updateProgressBar(percent) {
         elements.progressBar.style.width = `${percent}%`;
         elements.progressPercent.textContent = `${percent}%`;
     }
+}
+
+function simulateProgressBar() {
+    let progress = 0;
+    updateProgressBar(progress);
+
+    const interval = setInterval(() => {
+        progress += Math.random() * 10;
+        if (progress > 95) { // Stop simulation just before 100%
+            clearInterval(interval);
+            return;
+        }
+        updateProgressBar(Math.round(progress));
+    }, 200);
+    return interval;
 }
 
 function handleSearchInput(e) {
@@ -356,6 +406,38 @@ async function fetchStats() {
     }
 }
 
+async function fetchConfig() {
+    try {
+        const response = await fetch(`${API_BASE_URL}/config`);
+        if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+        }
+        const config = await response.json();
+        appState.config = config;
+    } catch (error) {
+        console.error('Error fetching config:', error);
+    }
+}
+
+async function fetchSubjects() {
+    try {
+        const response = await fetch(`${API_BASE_URL}/subjects`);
+        if (!response.ok) throw new Error('Failed to fetch subjects');
+        const subjects = await response.json();
+        
+        // Keep the first option ("All Subjects") and clear the rest
+        while (elements.filterSubject.options.length > 1) {
+            elements.filterSubject.remove(1);
+        }
+
+        subjects.forEach(subject => {
+            elements.filterSubject.add(new Option(subject, subject));
+        });
+    } catch (error) {
+        console.error('Error fetching subjects:', error);
+    }
+}
+
 function displayRecentFiles(files) {
     if (!elements.recentFilesContainer) return;
     
@@ -460,6 +542,15 @@ function getFileIcon(ext) {
         'txt': 'fas fa-file-alt'
     };
     return iconMap[ext] || 'fas fa-file';
+}
+
+function getBackendFileType(filename) {
+    const ext = getFileExtension(filename);
+    if (ext === 'pdf') return 'pdf';
+    if (['jpg', 'jpeg', 'png'].includes(ext)) return 'image';
+    if (['doc', 'docx', 'ppt', 'pptx', 'txt'].includes(ext)) return 'document';
+    // Default to 'document' for any other file types
+    return 'document';
 }
 
 function formatFileSize(bytes) {
