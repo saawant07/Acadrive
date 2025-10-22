@@ -1,79 +1,93 @@
 import os
 import aiofiles
-from fastapi import FastAPI, UploadFile, File, Form, HTTPException, Depends
+import aiosqlite
+import sqlite3
+from fastapi import FastAPI, UploadFile, File, Form, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
-from sqlmodel import Session
+from fastapi.responses import FileResponse, JSONResponse
 from pathlib import Path
-from database import get_session, FileRecord
+from datetime import datetime
+from typing import List, Dict, Any
+import re
 
 # Setup
-BACKEND_DIR = Path(__file__).resolve().parent
-UPLOADS_DIR = BACKEND_DIR / "uploads"
+BASE_DIR = Path(__file__).resolve().parent
+UPLOADS_DIR = BASE_DIR / "uploads"
 UPLOADS_DIR.mkdir(exist_ok=True)
+DB_PATH = BASE_DIR / "acadrive.db"
 
+# FastAPI App Initialization
 app = FastAPI(title="Acadrive API")
 
-# CORS
+# CORS Middleware
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=["*"],  # In production, restrict this to your frontend's domain
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-def get_database():
-    db = next(get_session())
-    try:
-        yield db
-    finally:
-        db.close()
+def init_db():
+    """Initializes the SQLite database and creates the files table if it doesn't exist."""
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    # This is a one-time sync operation, so standard sqlite3 is fine here.
+    conn.execute('''CREATE TABLE IF NOT EXISTS files (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            filename TEXT NOT NULL,
+            subject TEXT NOT NULL,
+            file_path TEXT NOT NULL,
+            file_url TEXT NOT NULL,
+            file_size INTEGER NOT NULL,
+            file_type TEXT NOT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )''')
+    conn.commit()
+    conn.close()
 
-@app.get("/")
-async def root():
-    return {"message": "Acadrive API is running"}
+@app.on_event("startup")
+async def startup_event():
+    """Run on startup to initialize the database."""
+    init_db()
 
 @app.get("/health")
 async def health_check():
     return {"status": "healthy"}
 
+def secure_filename(filename: str) -> str:
+    """Sanitizes a filename to be safe for storage."""
+    # Remove directory traversal attempts
+    filename = filename.lstrip('./\\')
+    # Keep only-safe characters
+    return re.sub(r'[^a-zA-Z0-9_.-]', '_', filename)
+
 @app.post("/upload/")
-async def upload_file(
-    subject: str = Form(...),
-    file: UploadFile = File(...),
-    db: Session = Depends(get_database)
-):
+async def upload_file(subject: str = Form(...), file: UploadFile = File(...)):
+    """Handles file uploads, sanitizes filename, saves file, and records it in the database."""
     try:
-        # Read file
-        content = await file.read()
-        file_size = len(content)
-        
-        # Validate size
+        # Security: Limit file size (e.g., 50MB)
+        contents = await file.read()
+        file_size = len(contents)
         if file_size > 50 * 1024 * 1024:
             raise HTTPException(status_code=400, detail="File too large")
         
         # Create safe filename
-        safe_filename = file.filename
+        safe_filename = secure_filename(file.filename)
         file_path = UPLOADS_DIR / safe_filename
         
-        # Handle duplicates
+        # Handle potential filename collisions
         counter = 1
-        name_parts = safe_filename.rsplit('.', 1)
+        final_filename = safe_filename
         while file_path.exists():
-            if len(name_parts) == 2:
-                new_filename = f"{name_parts[0]}_{counter}.{name_parts[1]}"
-            else:
-                new_filename = f"{safe_filename}_{counter}"
-            file_path = UPLOADS_DIR / new_filename
+            name, ext = os.path.splitext(safe_filename)
+            final_filename = f"{name}_{counter}{ext}"
+            file_path = UPLOADS_DIR / final_filename
             counter += 1
-        
-        final_filename = file_path.name
-        
-        # Save file
+
         async with aiofiles.open(file_path, 'wb') as out_file:
-            await out_file.write(content)
-        
+            await out_file.write(contents)
+
         # Determine file type
         file_type = 'document'
         if final_filename.lower().endswith('.pdf'):
@@ -82,67 +96,104 @@ async def upload_file(
             file_type = 'image'
         
         # Create database record
-        db_file = FileRecord(
-            filename=final_filename,
-            subject=subject,
-            file_path=str(file_path),
-            file_url=f"/uploads/{final_filename}",
-            file_size=file_size,
-            file_type=file_type
-        )
-        db.add(db_file)
-        db.commit()
-        db.refresh(db_file)
+        async with aiosqlite.connect(DB_PATH) as db:
+            cursor = await db.execute(
+                '''INSERT INTO files (filename, subject, file_path, file_url, file_size, file_type) VALUES (?, ?, ?, ?, ?, ?)''',
+                (final_filename, subject, str(file_path), f"/uploads/{final_filename}", file_size, file_type)
+            )
+            await db.commit()
+            file_id = cursor.lastrowid
         
         return {
-            "id": db_file.id,
-            "filename": db_file.filename,
-            "subject": db_file.subject,
+            "id": file_id,
+            "filename": final_filename,
+            "subject": subject,
             "file_url": f"/uploads/{final_filename}",
-            "file_size": db_file.file_size,
-            "file_type": db_file.file_type
+            "file_size": file_size,
+            "file_type": file_type
         }
-        
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=f"An error occurred: {e}")
 
 @app.get("/files/recent")
-def get_recent_files(db: Session = Depends(get_database)):
-    files = db.query(FileRecord).order_by(FileRecord.created_at.desc()).limit(5).all()
-    return files
+async def get_recent_files():
+    async with aiosqlite.connect(DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        cursor = await db.execute('''
+            SELECT id, filename, subject, file_url, file_size, file_type, created_at 
+            FROM files ORDER BY created_at DESC LIMIT 10
+        ''')
+        files = await cursor.fetchall()
+    
+    result = []
+    for file in files:
+        result.append({
+            "id": file["id"],
+            "filename": file["filename"],
+            "subject": file["subject"],
+            "file_url": file["file_url"],
+            "file_size": file["file_size"],
+            "file_type": file["file_type"],
+            "created_at": file["created_at"]
+        })
+    return result
 
 @app.get("/search/")
-def search_files(query: str, subject: str = None, file_type: str = None, db: Session = Depends(get_database)):
-    search_query = db.query(FileRecord)
-    
-    if query:
-        search_filter = f"%{query}%"
-        search_query = search_query.filter(
-            (FileRecord.filename.ilike(search_filter)) |
-            (FileRecord.subject.ilike(search_filter))
-        )
-    
-    if subject:
-        search_query = search_query.filter(FileRecord.subject == subject)
-    
-    if file_type:
-        search_query = search_query.filter(FileRecord.file_type == file_type)
-    
-    return search_query.order_by(FileRecord.created_at.desc()).all()
+async def search_files(query: str, subject: str = None, file_type: str = None):
+    async with aiosqlite.connect(DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        
+        sql = '''
+            SELECT id, filename, subject, file_url, file_size, file_type, created_at 
+            FROM files WHERE (filename LIKE :query OR subject LIKE :query)
+        '''
+        params = {'query': f'%{query}%'}
+        
+        if subject and subject != "All Subjects":
+            sql += " AND subject = :subject"
+            params['subject'] = subject
+        
+        if file_type:
+            sql += " AND file_type = :file_type"
+            params['file_type'] = file_type
+        
+        sql += " ORDER BY created_at DESC"
+        
+        cursor = await db.execute(sql, params)
+        files = await cursor.fetchall()
+
+    result = []
+    for file in files:
+        result.append({
+            "id": file["id"],
+            "filename": file["filename"],
+            "subject": file["subject"],
+            "file_url": file["file_url"],
+            "file_size": file["file_size"],
+            "file_type": file["file_type"],
+            "created_at": file["created_at"]
+        })
+    return result
 
 @app.get("/stats")
-def get_stats(db: Session = Depends(get_database)):
-    total_files = db.query(FileRecord).count()
-    total_subjects = db.query(FileRecord.subject).distinct().count()
+async def get_stats():
+    async with aiosqlite.connect(DB_PATH) as db:
+        total_files_cursor = await db.execute("SELECT COUNT(*) FROM files")
+        total_files = (await total_files_cursor.fetchone())[0]
+        
+        total_subjects_cursor = await db.execute("SELECT COUNT(DISTINCT subject) FROM files")
+        total_subjects = (await total_subjects_cursor.fetchone())[0]
+    
     return {
         "total_files": total_files,
         "total_subjects": total_subjects,
-        "active_users": 1
+        "active_users": 1 # Placeholder for active users
     }
 
 @app.get("/uploads/{filename}")
-async def get_uploaded_file(filename: str):
+async def get_upload(filename: str):
+    """Serves an uploaded file."""
     file_path = UPLOADS_DIR / filename
-    if file_path.is_file():
-        return FileResponse(file_path)
-    raise HTTPException(status_code=404, detail="File not found")
+    if not file_path.is_file():
+        raise HTTPException(status_code=404, detail="File not found")
+    return FileResponse(file_path)
