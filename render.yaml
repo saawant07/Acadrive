@@ -10,5 +10,5 @@ services:
     # Add a persistent disk to store your database and uploads
     disks:
       - name: acadrive-data
-        mountPath: . # Mount the disk at the service's root directory (which is 'backend')
+        mountPath: /opt/render/project/src/backend # Use an absolute path for the disk mount
         sizeGB: 1
