@@ -3,6 +3,7 @@ services:
     name: acadrive-backend
     env: python
     rootDir: backend # Specify that the service's root is the 'backend' folder
+    pythonVersion: "3.11" # Explicitly set the Python version
     plan: free
     buildCommand: pip install --upgrade pip && pip install -r requirements.txt
     startCommand: uvicorn main:app --host 0.0.0.0 --port $PORT
