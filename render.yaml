@@ -2,11 +2,13 @@ services:
   - type: web
     name: acadrive-backend
     env: python
+    rootDir: backend # Specify that the service's root is the 'backend' folder
     plan: free
     buildCommand: pip install -r requirements.txt
     startCommand: uvicorn main:app --host 0.0.0.0 --port $PORT
     # Add a persistent disk to store your database and uploads
     disks:
       - name: acadrive-data
-        mountPath: /app/backend/uploads # Mount the disk at the uploads directory
+        mountPath: . # Mount the disk at the service's root directory (which is 'backend')
         sizeGB: 1
+
