@@ -69,13 +69,6 @@ async def startup_event():
 async def health_check():
     return {"status": "healthy"}
 
-def secure_filename(filename: str) -> str:
-    """Sanitizes a filename to be safe for storage."""
-    # Remove directory traversal attempts
-    filename = filename.lstrip('./\\')
-    # Keep only-safe characters
-    return re.sub(r'[^a-zA-Z0-9_.-]', '_', filename)
-
 @app.get("/config")
 async def get_config():
     """Provides the Cloudinary cloud name to the frontend."""
