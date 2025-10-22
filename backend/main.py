@@ -1,184 +1,142 @@
 import os
-import aiosqlite
-import sqlite3
-from fastapi import FastAPI, HTTPException
+import aiofiles
+from fastapi import FastAPI, UploadFile, File, Form, HTTPException, Depends
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse, JSONResponse
+from sqlalchemy.orm import Session
+from sqlalchemy import or_, distinct
 from pathlib import Path
-from datetime import datetime
-from typing import List, Dict, Any, Optional
-import re
-import cloudinary
-from pydantic import BaseModel
+from typing import List, Optional
+from pydantic import BaseModel # Import BaseModel
+from dotenv import load_dotenv # Import load_dotenv
 
-# Setup
-BASE_DIR = Path(__file__).resolve().parent
-DB_PATH = BASE_DIR / "acadrive.db"
+# Import database setup and model
+from database import get_db, FileRecord, init_db
 
-# Cloudinary Configuration - expecting environment variables
-cloudinary.config(
-    cloud_name=os.environ.get("CLOUDINARY_CLOUD_NAME"),
-    api_key=os.environ.get("CLOUDINARY_API_KEY"),
-    api_secret=os.environ.get("CLOUDINARY_API_SECRET"),
-    secure=True
-)
+# --- SETUP ---
+load_dotenv() # Load variables from .env file
 
-# FastAPI App Initialization
+# Get the directory where this main.py file is located
+BACKEND_DIR = Path(__file__).resolve().parent
+# Define the directory to store uploads within the backend folder
+UPLOADS_DIR = BACKEND_DIR / "uploads"
+UPLOADS_DIR.mkdir(exist_ok=True) # Create the folder if it doesn't exist
+
+# Initialize database tables on startup
+init_db()
+
 app = FastAPI(title="Acadrive API")
 
-# CORS Middleware
+# --- MIDDLEWARE (For CORS) ---
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # In production, restrict this to your frontend's domain
+    allow_origins=["*"], # Allow all origins for now
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# Pydantic Models for request body validation
-class FileUploadData(BaseModel):
+# --- Pydantic Model for JSON Request ---
+class FileUploadRequest(BaseModel):
     subject: str
     file_url: str
     filename: str
     file_size: int
     file_type: str
 
-def init_db():
-    """Initializes the SQLite database and creates the files table if it doesn't exist."""
-    conn = sqlite3.connect(DB_PATH)
-    cursor = conn.cursor()
-    # This is a one-time sync operation, so standard sqlite3 is fine here.
-    conn.execute('''CREATE TABLE IF NOT EXISTS files (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            filename TEXT NOT NULL,
-            subject TEXT NOT NULL,
-            file_path TEXT,
-            file_url TEXT NOT NULL,
-            file_size INTEGER NOT NULL,
-            file_type TEXT NOT NULL,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        )''')
-    conn.commit()
-    conn.close()
-
-@app.on_event("startup")
-async def startup_event():
-    """Run on startup to initialize the database."""
-    init_db()
+# --- API ENDPOINTS ---
 
 @app.get("/health")
 async def health_check():
     return {"status": "healthy"}
 
+# NEW: /config endpoint for frontend
 @app.get("/config")
 async def get_config():
-    """Provides the Cloudinary cloud name to the frontend."""
-    cloud_name = os.environ.get("CLOUDINARY_CLOUD_NAME")
+    cloud_name = os.getenv("CLOUDINARY_CLOUD_NAME")
     if not cloud_name:
-        raise HTTPException(status_code=500, detail="Cloudinary configuration is missing on the server.")
+        raise HTTPException(status_code=500, detail="Cloudinary config not set")
     return {"cloud_name": cloud_name}
 
-@app.post("/upload/", status_code=201)
-async def save_file_record(data: FileUploadData):
-    """Saves the metadata of a file already uploaded to Cloudinary."""
+# UPDATED: /upload/ endpoint to accept JSON
+@app.post("/upload/")
+async def upload_file(
+    upload_data: FileUploadRequest, # Use the Pydantic model
+    db: Session = Depends(get_db)
+):
     try:
-        async with aiosqlite.connect(DB_PATH) as db:
-            cursor = await db.execute(
-                '''INSERT INTO files (filename, subject, file_path, file_url, file_size, file_type) VALUES (?, ?, ?, ?, ?, ?)''',
-                (data.filename, data.subject, "cloudinary", data.file_url, data.file_size, data.file_type)
-            )
-            await db.commit()
-            file_id = cursor.lastrowid
+        # We are receiving data *after* it's on Cloudinary
+        # The file_path is now the remote URL
+        db_file = FileRecord(
+            filename=upload_data.filename,
+            subject=upload_data.subject,
+            file_path=upload_data.file_url, # Store the Cloudinary URL
+            file_url=upload_data.file_url,  # Store the Cloudinary URL
+            file_size=upload_data.file_size,
+            file_type=upload_data.file_type
+        )
+        db.add(db_file)
+        db.commit()
+        db.refresh(db_file)
         
+        # Return data matching frontend expectations
         return {
-            "id": file_id,
-            "filename": data.filename,
-            "subject": data.subject,
-            "file_url": data.file_url,
-            "file_size": data.file_size,
-            "file_type": data.file_type
+            "id": db_file.id, "filename": db_file.filename, "subject": db_file.subject,
+            "file_url": db_file.file_url, "file_size": db_file.file_size,
+            "file_type": db_file.file_type, "created_at": db_file.created_at
         }
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"An error occurred: {e}")
+        print(f"Error during upload processing: {e}") 
+        raise HTTPException(status_code=500, detail=f"An error occurred: {str(e)}")
 
 @app.get("/files/recent")
-async def get_recent_files():
-    async with aiosqlite.connect(DB_PATH) as db:
-        db.row_factory = aiosqlite.Row
-        cursor = await db.execute('''
-            SELECT id, filename, subject, file_url, file_size, file_type, created_at 
-            FROM files ORDER BY created_at DESC LIMIT 10
-        ''')
-        files = await cursor.fetchall()
-    
-    result = []
-    for file in files:
-        result.append({
-            "id": file["id"],
-            "filename": file["filename"],
-            "subject": file["subject"],
-            "file_url": file["file_url"],
-            "file_size": file["file_size"],
-            "file_type": file["file_type"],
-            "created_at": file["created_at"]
-        })
-    return result
+def get_recent_files(db: Session = Depends(get_db)):
+    return db.query(FileRecord).order_by(FileRecord.created_at.desc()).limit(4).all()
 
 @app.get("/search/")
-async def search_files(query: str, subject: Optional[str] = None, file_type: Optional[str] = None):
-    async with aiosqlite.connect(DB_PATH) as db:
-        db.row_factory = aiosqlite.Row
+def search_files(query: Optional[str] = None, subject: Optional[str] = None, file_type: Optional[str] = None, db: Session = Depends(get_db)):
+    search_query = db.query(FileRecord)
+    
+    if query:
+        search_filter = f"%{query}%"
+        search_query = search_query.filter(
+            or_(
+                FileRecord.filename.ilike(search_filter),
+                FileRecord.subject.ilike(search_filter)
+            )
+        )
+    if subject and subject != "All Subjects": 
+        search_query = search_query.filter(FileRecord.subject == subject)
+    if file_type and file_type != "All Types": 
+        search_query = search_query.filter(FileRecord.file_type == file_type)
         
-        sql = '''
-            SELECT id, filename, subject, file_url, file_size, file_type, created_at 
-            FROM files WHERE (filename LIKE :query OR subject LIKE :query)
-        '''
-        params = {'query': f'%{query}%'}
-        
-        if subject and subject != "All Subjects":
-            sql += " AND subject = :subject"
-            params['subject'] = subject
-        
-        if file_type and file_type != "All Types":
-            sql += " AND file_type = :file_type"
-            params['file_type'] = file_type
-        
-        sql += " ORDER BY created_at DESC"
-        
-        cursor = await db.execute(sql, params)
-        files = await cursor.fetchall()
-
-    result = []
-    for file in files:
-        result.append({
-            "id": file["id"],
-            "filename": file["filename"],
-            "subject": file["subject"],
-            "file_url": file["file_url"],
-            "file_size": file["file_size"],
-            "file_type": file["file_type"],
-            "created_at": file["created_at"]
-        })
-    return result
+    return search_query.order_by(FileRecord.created_at.desc()).all()
 
 @app.get("/stats")
-async def get_stats():
-    async with aiosqlite.connect(DB_PATH) as db:
-        total_files_cursor = await db.execute("SELECT COUNT(*) FROM files")
-        total_files = (await total_files_cursor.fetchone())[0]
-        
-        total_subjects_cursor = await db.execute("SELECT COUNT(DISTINCT subject) FROM files")
-        total_subjects = (await total_subjects_cursor.fetchone())[0]
-    
+def get_stats(db: Session = Depends(get_db)):
+    total_files = db.query(FileRecord).count()
+    total_subjects = db.query(distinct(FileRecord.subject)).count()
     return {
         "total_files": total_files,
         "total_subjects": total_subjects,
-        "active_users": 1 # Placeholder for active users
+        "active_users": "1" # Placeholder
     }
 
 @app.get("/subjects")
-async def get_subjects():
-    """Returns a list of unique subjects from the database."""
-    async with aiosqlite.connect(DB_PATH) as db:
-        cursor = await db.execute("SELECT DISTINCT subject FROM files ORDER BY subject ASC")
-        subjects = await cursor.fetchall()
-    return [subject[0] for subject in subjects]
+def get_subjects(db: Session = Depends(get_db)):
+    subjects = db.query(distinct(FileRecord.subject)).order_by(FileRecord.subject.asc()).all()
+    return [subject[0] for subject in subjects if subject[0]]
+
+
+# --- SERVING STATIC FILES ---
+# We remove serving local /uploads/ files, as they are now on Cloudinary
+# We keep serving the frontend for local testing
+
+# Mounts the 'frontend' directory to serve index.html etc. at the root URL
+app.mount("/", StaticFiles(directory="../frontend", html=True), name="frontend")
+
+# Allows running the server directly with 'python3 backend/main.py'
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)
